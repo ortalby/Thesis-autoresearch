@@ -1,0 +1,70 @@
+name: עדכון תזות
+
+on:
+  schedule:
+    - cron: "23 4 * * *"   # כל יום ב-04:23 UTC: אחרי סגירת וול סטריט ולפני פתיחת המסחר בתל אביב
+  workflow_dispatch:
+    inputs:
+      max:
+        description: "מקסימום תזות בריצה"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: state-writer
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: מטמון נתונים
+        uses: actions/cache@v4
+        with:
+          path: state/cache
+          key: data-cache-${{ github.run_id }}
+          restore-keys: data-cache-
+
+      - name: בדיקות
+        run: python -m pytest -q tests
+
+      - name: עדכון
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "${{ github.event.inputs.max }}" ]; then
+            python run_update.py --max "${{ github.event.inputs.max }}"
+          else
+            python run_update.py
+          fi
+
+      - name: שמירת מצב
+        if: always()
+        run: |
+          git config user.name "thesis-bot"
+          git config user.email "thesis-bot@users.noreply.github.com"
+          git add state/theses state/predictions.jsonl state/changes.jsonl state/scorecard.json \
+                  state/scan.json state/universe.json state/llm_usage.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "עדכון תזות $(date -u +%Y-%m-%d)"
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME}"
+            git push
+          fi

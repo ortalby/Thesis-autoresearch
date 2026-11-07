@@ -1,0 +1,78 @@
+# הגדרות המערכת. כל הערכים כאן נקראים על ידי engine/config.py.
+
+universe:
+  # Russell 1000 (מתוך קובץ האחזקות של iShares IWB) + ת"א-125 (מהבורסה בתל אביב)
+  us_index: russell1000
+  il_index: ta125
+  refresh_days: 7              # כל כמה ימים לרענן את רשימת המניות במדדים
+
+benchmarks:
+  US: IWB                      # קרן הסל על Russell 1000 — התשואה העודפת נמדדת מולה
+  IL: "^TA125.TA"              # מדד ת"א-125
+
+llm:
+  # הגדרה חינמית: מפתח מפרויקט בלי חיוב ב-AI Studio. המכסות נספרות לכל מודל בנפרד.
+  # המכסות בפועל מופיעות ב-https://aistudio.google.com/rate-limit — כדאי לבדוק ולעדכן כאן.
+  thesis_model: gemini-3.5-flash-lite   # המכסה החינמית הגדולה ביותר (כ-500 בקשות ביום); תאריך ידע מרץ 2026
+  judge_model: gemini-3.5-flash-lite
+  agent_model: gemini-3.8-flash         # הסוכן שכותב קוד: מעט קריאות ביום, נכנס במכסה החינמית שלו
+  thinking_level: medium       # minimal / low / medium / high
+  requests_per_minute: 4       # מגבלת הטוקנים לדקה בחינם (כ-250 אלף) מאפשרת כ-5 תזות בדקה
+  max_calls_per_day: 450       # מתחת למכסה היומית החינמית, עם מרווח
+  max_calls_per_stock: 3       # כמה קריאות מותר לאסטרטגיה לבצע לכל מניה
+  max_input_chars_per_call: 250000
+  max_output_tokens: 32000     # כולל טוקני חשיבה
+
+update:
+  max_theses_per_run: 150      # כמה תזות לכל היותר לרענן בריצה אחת (כיסוי ראשון מלא: כ-8 ימים)
+  stale_after_days: 21         # תזה ישנה מזה תרוענן גם בלי אירוע
+  price_move_sigma: 2.5        # תנועת מחיר חריגה (בסטיות תקן יומיות) שמפעילה עדכון
+  horizons_days: [30, 90]      # אופקי התחזית שנמדדים (תואם לשדות בסכמת התזה)
+  time_budget_minutes: 320     # מתחת למגבלת 6 השעות של GitHub Actions
+  workers: 4                   # מניות שמעובדות במקביל
+  news_lookback_days: 30
+  filings_lookback_days: 180
+
+research:
+  # חלון ההערכה מתחיל אחרי תאריך הידע של המודל (מרץ 2026 ל-gemini-3.5-flash-lite),
+  # כדי שהמודל לא "יידע" מה קרה בפועל. אם מחליפים מודל — לעדכן.
+  leakage_cutoff: "2026-04-01"
+  eval_dates: 4                # כמה תאריכי ניתוח היסטוריים בסט ההערכה
+  dev_per_date: 6              # מניות לכל תאריך בסט שעליו הלולאה מחליטה
+  holdout_per_date: 3          # מניות לכל תאריך בסט הבקרה (לא משפיע על ההחלטה)
+  il_share: 0.3                # חלק המניות הישראליות בסט
+  experiments_per_run: 2       # כל ניסוי = 48 קריאות (24 תזות + 24 שיפוטים)
+  experiment_timeout_minutes: 30
+  run_time_budget_minutes: 330 # מתחת למגבלת 6 השעות של GitHub Actions
+  min_improvement: 0.005       # שיפור מינימלי בציון כדי לשמור שינוי
+  weights:                     # הרכב הציון המשולב
+    rank_ic: 0.35              # מתאם דירוג בין התשואה העודפת החזויה לבפועל
+    brier_skill: 0.35          # דיוק ההסתברות להכות את המדד
+    judge: 0.30                # ציון איכות מהמודל השופט
+  seed: 1729
+
+sheets:
+  spreadsheet_id_env: GOOGLE_SHEET_ID
+  service_account_env: GOOGLE_SERVICE_ACCOUNT_JSON
+
+sec:
+  user_agent_env: SEC_USER_AGENT   # SEC דורשת שם ואימייל ב-User-Agent
+  requests_per_second: 8
+
+macro:
+  fred_series:
+    DGS10: "תשואת אג\"ח ממשלתי ארה\"ב 10 שנים"
+    DGS2: "תשואת אג\"ח ממשלתי ארה\"ב שנתיים"
+    FEDFUNDS: "ריבית הפד"
+    CPIAUCSL: "מדד המחירים לצרכן בארה\"ב"
+    UNRATE: "שיעור האבטלה בארה\"ב"
+    BAMLH0A0HYM2: "מרווח אג\"ח High Yield"
+    DCOILWTICO: "נפט WTI"
+    DTWEXBGS: "מדד הדולר הרחב"
+    VIXCLS: "VIX"
+  boi_series:
+    - {dataflow: BR, code: MNT_RIB_BOI_D, label: "ריבית בנק ישראל"}
+    - {dataflow: ZCM, code: EXP_EXP_01Y_BI_MA, label: "ציפיות אינפלציה לשנה"}
+    - {dataflow: ZCM, code: ZC_TSB_ZND_05Y_MA, label: "תשואה נומינלית ממשלתית 5 שנים"}
+    - {dataflow: EXR, code: RER_USD_ILS, label: "שער יציג דולר-שקל"}
+  cbs_cpi_id: 120010

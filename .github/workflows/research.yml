@@ -1,0 +1,71 @@
+name: לולאת מחקר (autoresearch)
+
+on:
+  schedule:
+    - cron: "37 14 * * *"   # כל יום ב-14:37 UTC, אחרי ריצת העדכון
+  workflow_dispatch:
+    inputs:
+      experiments:
+        description: "מספר ניסויים בריצה"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: state-writer
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: מטמון נתונים
+        uses: actions/cache@v4
+        with:
+          path: state/cache
+          key: data-cache-${{ github.run_id }}
+          restore-keys: data-cache-
+
+      - name: בדיקות
+        run: python -m pytest -q tests
+
+      - name: git
+        run: |
+          git config user.name "thesis-bot"
+          git config user.email "thesis-bot@users.noreply.github.com"
+
+      - name: לולאת מחקר
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: |
+          if [ -n "${{ github.event.inputs.experiments }}" ]; then
+            python run_research.py --experiments "${{ github.event.inputs.experiments }}"
+          else
+            python run_research.py
+          fi
+
+      - name: שמירת מצב
+        if: always()
+        run: |
+          git add state/research/results.tsv state/research/best_dev_report.json state/llm_usage.json \
+                  state/research/evalset.json state/research/bundles state/universe.json 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "מחקר: יומן ניסויים $(date -u +%Y-%m-%d)"
+          fi
+          git pull --rebase -X theirs origin "${GITHUB_REF_NAME}"
+          git push

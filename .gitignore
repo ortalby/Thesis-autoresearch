@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+state/cache/
+state/research/eval_baseline.json
+state/research/exp-*.json
+.env
