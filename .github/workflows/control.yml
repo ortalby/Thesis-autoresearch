@@ -1,0 +1,95 @@
+name: "▶️ ⏹️ שליטה בבוט"
+
+# כפתור ההפעלה והעצירה: Actions ← "שליטה בבוט" ← Run workflow ← בוחרים פעולה.
+# עובד גם מאפליקציית GitHub בטלפון.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "מה לעשות"
+        required: true
+        type: choice
+        default: "התחל"
+        options:
+          - "התחל"
+          - "עצור"
+          - "מצב"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: התחל
+        if: inputs.action == 'התחל'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          missing=""
+          for s in GEMINI_API_KEY SEC_USER_AGENT GOOGLE_SHEET_ID GOOGLE_SERVICE_ACCOUNT_JSON; do
+            if [ -z "${!s}" ]; then missing="$missing $s"; fi
+          done
+          if [ -n "$missing" ]; then
+            {
+              echo "## ❌ הבוט לא הופעל"
+              echo "חסרים secrets:$missing"
+              echo ""
+              echo "מוסיפים אותם ב-Settings ← Secrets and variables ← Actions, ואז לוחצים שוב על התחל."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          gh workflow enable update.yml --repo "$REPO"
+          gh workflow enable research.yml --repo "$REPO"
+          gh workflow run update.yml --repo "$REPO"
+          {
+            echo "## ▶️ הבוט פועל"
+            echo "- עדכון תזות התחיל עכשיו, וימשיך כל יום ב-04:23 UTC."
+            echo "- לולאת המחקר תרוץ כל יום ב-14:37 UTC."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: עצור
+        if: inputs.action == 'עצור'
+        run: |
+          gh workflow disable update.yml --repo "$REPO"
+          gh workflow disable research.yml --repo "$REPO"
+          for wf in update.yml research.yml; do
+            for st in in_progress queued; do
+              for id in $(gh run list --repo "$REPO" --workflow "$wf" --status "$st" --json databaseId --jq '.[].databaseId'); do
+                gh run cancel "$id" --repo "$REPO" || true
+              done
+            done
+          done
+          {
+            echo "## ⏹️ הבוט נעצר"
+            echo "הריצות המתוזמנות כובו, וריצות פעילות בוטלו. התזות שכבר נשמרו נשארות."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: מצב
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "### מצב נוכחי"
+            echo "| תהליך | מצב |"
+            echo "|---|---|"
+            for wf in update.yml research.yml; do
+              name=$(gh api "repos/$REPO/actions/workflows/$wf" --jq .name)
+              state=$(gh api "repos/$REPO/actions/workflows/$wf" --jq .state)
+              if [ "$state" = "active" ]; then state="פועל ▶️"; else state="עצור ⏹️"; fi
+              echo "| $name | $state |"
+            done
+            echo ""
+            echo "### ריצות אחרונות"
+            gh run list --repo "$REPO" --limit 6 --json workflowName,status,conclusion,createdAt \
+              --jq '.[] | "- \(.workflowName): \(.status) \(.conclusion // "") (\(.createdAt))"'
+          } >> "$GITHUB_STEP_SUMMARY"
